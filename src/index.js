@@ -1,22 +1,15 @@
 require('dotenv').config();
 
-// Core Modules
 const path = require('path');
-
-// NPM Packages
 const express = require('express');
 
-// Local Modules: Config
 const connectDatabase = require('./config/database');
-
-// Local Modules: Middleware
 const sessionMiddleware = require('./middleware/session');
 const { createGetCurrentUserMiddleware } = require('./middleware/auth');
 const { requireInvitation } = require('./middleware/invite');
 const createImageAccessMiddleware = require('./middleware/imageAccess');
 const { upload, generalUpload, uploadsDir } = require('./middleware/upload');
 
-// Local Modules: Routes
 const createMainRoutes = require('./routes/main');
 const createAuthRoutes = require('./routes/auth');
 const createMessageRoutes = require('./routes/messages');
@@ -25,70 +18,58 @@ const createUploadRoutes = require('./routes/upload');
 const createSearchRoutes = require('./routes/search');
 const createInviteRoutes = require('./routes/invite');
 
+const createRAGService = require('./utils/rag-service');
 
-// ==================== Initialization ====================
 const app = express();
 const port = 1989;
 const db = connectDatabase(uploadsDir);
 
+const ragService = createRAGService();
 
-// ==================== App Configuration ====================
-// Set server timeout for large file uploads
 app.use((req, res, next) => {
-  req.setTimeout(300000); // 5 minutes
-  res.setTimeout(300000); // 5 minutes
+  req.setTimeout(300000);
+  res.setTimeout(300000);
   next();
 });
 
-// View engine setup
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 
-
-// ==================== Middleware ====================
-// Static assets
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-
-// Parsers
 app.use(express.json());
 
-// Session and Auth
 app.use(sessionMiddleware);
 app.use(createGetCurrentUserMiddleware(db));
 
-// Custom Middleware
 app.use('/uploads/:filename', createImageAccessMiddleware(db));
-// Static file serving for uploads (after permission check)
 app.use('/uploads', express.static(uploadsDir));
 
-
-// ==================== Routes ====================
-// Invitation verification route (must be before main routes)
 const inviteRoutes = createInviteRoutes();
 app.use('/invite', inviteRoutes);
 app.use('/api/invite', inviteRoutes);
 
-// Main route (with invitation check)
 app.use('/', requireInvitation, createMainRoutes(db));
 
-// API routes
 const authRoutes = createAuthRoutes(db);
-const messageRoutes = createMessageRoutes(db, uploadsDir);
-const commentRoutes = createCommentRoutes(db);
+const messageRoutes = createMessageRoutes(db, uploadsDir, ragService);
+const commentRoutes = createCommentRoutes(db, ragService);
 const uploadRoutes = createUploadRoutes(upload, generalUpload, uploadsDir);
-const searchRoutes = createSearchRoutes(db);
+const searchRoutes = createSearchRoutes(db, ragService);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/search', searchRoutes);
-app.use('/api', uploadRoutes); // Must be after other /api routes
+app.use('/api', uploadRoutes);
 
-
-// ==================== Server Start ====================
 const server = app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);
+
+  if (process.env.RUN_VEC_MIGRATION === 'true') {
+    const runMigration = require('./database/vec-migration');
+    setTimeout(() => runMigration(db), 5000);
+  }
 });
 
-server.setTimeout(300000); // 5 minutes
+server.setTimeout(300000);

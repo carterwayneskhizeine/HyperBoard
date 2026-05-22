@@ -6,7 +6,32 @@ services:
       - "0.0.0.0:61989:1989"
     env_file:
       - ./.env
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=256
     volumes:
-      # Mount the local data directory to the container's data directory for persistence
       - ./data:/app/data
+    depends_on:
+      - qdrant
+    networks:
+      - hyperboard-net
     restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: hyper-board-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    networks:
+      - hyperboard-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  hyperboard-net:
+    driver: bridge

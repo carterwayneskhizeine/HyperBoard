@@ -1,43 +1,53 @@
 const axios = require('axios');
 
-/**
- * Generates an AI response based on a message and a user's comment.
- * @param {string} messageContent - The content of the original message.
- * @param {string} userComment - The user's comment that triggered the AI.
- * @returns {Promise<string|null>} The AI-generated response text, or null on error.
- */
-async function getAIResponse(messageContent, userComment) {
-  const { LITE_LLM_URL, LITE_LLM_API_KEY, LITE_LLM_MODEL } = process.env;
+async function getAIResponse(messageContent, userComment, ragService) {
+  const { AI_CHAT_API_URL, AI_CHAT_API_KEY, AI_CHAT_MODEL } = process.env;
 
-  if (!LITE_LLM_URL || !LITE_LLM_API_KEY || !LITE_LLM_MODEL) {
-    console.error('LiteLLM environment variables are not fully configured.');
+  if (!AI_CHAT_API_URL || !AI_CHAT_API_KEY || !AI_CHAT_MODEL) {
+    console.error('AI_CHAT env vars not configured.');
     return null;
   }
 
-  const systemPrompt = `You are a helpful and insightful assistant on an anonymous message board.
+  const truncatedMessage = (messageContent || '').substring(0, 3000);
+  const truncatedComment = (userComment || '').substring(0, 1000);
+
+  let ragContext = '';
+  if (ragService) {
+    try {
+      ragContext = await ragService.buildContext(truncatedComment + ' ' + truncatedMessage, 3);
+    } catch (err) {
+      console.error('[AI] RAG context failed:', err.message);
+    }
+  }
+
+  let systemPrompt = `You are a helpful and insightful assistant on an anonymous message board.
 Your name is GoldieRill.
 A user has posted a message, and another user has mentioned you in a comment.
 Your task is to provide a helpful and relevant response to the comment, based on the context of the original message.
 Be concise and stay on topic.
 Respond to the user in Simplified Chinese.`;
 
+  if (ragContext) {
+    systemPrompt += `\n\nHere is some relevant context from the board's history that may help you respond:\n${ragContext}`;
+  }
+
   const userPrompt = `Original Message:
 ---
-${messageContent}
+${truncatedMessage}
 ---
 
 User's Comment (that mentioned you):
 ---
-${userComment}
+${truncatedComment}
 ---
 
 Your response:`;
 
   try {
     const response = await axios.post(
-      LITE_LLM_URL,
+      AI_CHAT_API_URL,
       {
-        model: LITE_LLM_MODEL,
+        model: AI_CHAT_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -46,19 +56,20 @@ Your response:`;
       {
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${LITE_LLM_API_KEY}`,
+          Authorization: `Bearer ${AI_CHAT_API_KEY}`,
         },
+        timeout: 60000,
       }
     );
 
     if (response.data && response.data.choices && response.data.choices.length > 0) {
       return response.data.choices[0].message.content.trim();
     } else {
-      console.error('Received an unexpected response structure from LiteLLM:', response.data);
+      console.error('Unexpected LLM response structure:', response.data);
       return null;
     }
   } catch (error) {
-    console.error('Error calling LiteLLM API:', error.response ? error.response.data : error.message);
+    console.error('Error calling LLM API:', error.response ? error.response.data : error.message);
     return null;
   }
 }

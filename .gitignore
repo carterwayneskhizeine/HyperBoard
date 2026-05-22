@@ -21,3 +21,4 @@ exported_messages_individual/
 .claude/
 
 MessageID.txt
+qdrant_data/
