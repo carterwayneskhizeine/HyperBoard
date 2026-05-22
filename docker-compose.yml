@@ -1,7 +1,7 @@
 services:
   message-board:
     build: .
-    container_name: black-pulse
+    container_name: hyper-board
     ports:
       - "0.0.0.0:61989:1989"
     env_file:

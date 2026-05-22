@@ -1,5 +1,5 @@
 {
-  "name": "black-pulse",
+  "name": "hyper-board",
   "version": "2.0.0",
   "description": "Anonymous message board application",
   "main": "src/index.js",
