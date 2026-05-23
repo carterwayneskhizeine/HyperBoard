@@ -53,7 +53,7 @@ function createRAGService() {
               vectors: { size: dimension, distance: 'Cosine' },
               optimizers_config: { indexing_threshold: 20000 },
             },
-            { timeout: 10000 }
+            { timeout: 10000, maxContentLength: 1024 * 1024 }
           );
           ready = true;
           console.log(`[RAG] Created collection "${collectionName}" (dim=${dimension}).`);

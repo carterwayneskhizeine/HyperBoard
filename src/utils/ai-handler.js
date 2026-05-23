@@ -72,6 +72,8 @@ Your response:`;
         },
         timeout: 60000,
         signal: controller.signal,
+        maxContentLength: 2 * 1024 * 1024,
+        maxBodyLength: 2 * 1024 * 1024,
       }
     );
 

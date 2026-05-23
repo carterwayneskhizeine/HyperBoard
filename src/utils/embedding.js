@@ -21,11 +21,15 @@ async function embed(text) {
         Authorization: `Bearer ${EMBEDDING_API_KEY}`,
       },
       timeout: 30000,
+      maxContentLength: 2 * 1024 * 1024,
+      maxBodyLength: 2 * 1024 * 1024,
     }
   );
 
   if (response.data && response.data.data && response.data.data.length > 0) {
-    return response.data.data[0].embedding;
+    const vector = response.data.data[0].embedding;
+    console.log(`[Embed] ${EMBEDDING_MODEL} → dim=${vector.length}, resp≈${JSON.stringify(response.data).length}B`);
+    return vector;
   }
 
   throw new Error('Unexpected embedding API response structure');
