@@ -1,11 +1,12 @@
-import { loadCommentsForMessage } from './comment-loader.js';
+// Dynamic import used to avoid circular dependency:
+// comment-section-renderer → ai-notify → comment-loader → comment-section-renderer
+const _getLoader = () => import('./comment-loader.js').then(m => m.loadCommentsForMessage);
 
-const FIRST_POLL_DELAY = 5000;  // wait 5s before first check (AI takes time)
-const POLL_INTERVAL    = 3500;  // then poll every 3.5s
-const MAX_POLLS        = 22;    // ~82s total before giving up
+const FIRST_POLL_DELAY = 5000;
+const POLL_INTERVAL    = 3500;
+const MAX_POLLS        = 22;
 const AI_USERNAME      = 'GoldieRill';
 
-// messageId → { intervalId, knownIds: Set, count }
 const _polls = new Map();
 
 const _flatten = (comments) => {
@@ -31,13 +32,13 @@ export const startAIReplyPoll = (messageId) => {
     const state = { intervalId: null, knownIds, count: 0 };
     _polls.set(messageId, state);
 
-    _showWaitingIndicator(messageId);
+    _showWaitingBanner(messageId);
 
     const check = async () => {
         state.count++;
         if (state.count > MAX_POLLS) {
             stopAIReplyPoll(messageId);
-            _removeWaitingIndicator(messageId);
+            _removeBanner(_waitingId(messageId));
             return;
         }
         try {
@@ -49,13 +50,12 @@ export const startAIReplyPoll = (messageId) => {
             );
             if (newAI.length > 0) {
                 stopAIReplyPoll(messageId);
-                _removeWaitingIndicator(messageId);
-                _showBanner(messageId, newAI[0]);
+                _removeBanner(_waitingId(messageId));
+                _showReplyBanner(messageId, newAI[0]);
             }
-        } catch { /* network hiccup, retry next tick */ }
+        } catch { /* network hiccup */ }
     };
 
-    // First check after delay, then repeat
     setTimeout(() => {
         if (!_polls.has(messageId)) return;
         check();
@@ -70,69 +70,108 @@ export const stopAIReplyPoll = (messageId) => {
     _polls.delete(messageId);
 };
 
-// ── Waiting indicator: fixed to body, immune to comment section re-renders ──
+// ── Shared inline style for all banners ─────────────────────────────────────
 
-const _waitingId = (messageId) => `ai-waiting-${messageId}`;
+const _BASE_STYLE = {
+    position:   'fixed',
+    top:        '58px',
+    left:       '50%',
+    transform:  'translateX(-50%)',
+    zIndex:     '99999',
+    display:    'flex',
+    alignItems: 'center',
+    gap:        '10px',
+    padding:    '6px 14px',
+    fontSize:   '11px',
+    fontFamily: 'Tahoma, Verdana, Arial, sans-serif',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
+    boxShadow:  '2px 2px 0 #000000',
+    border:     '2px solid',
+    color:      '#FFFFFF',
+};
 
-const _showWaitingIndicator = (messageId) => {
-    if (document.getElementById(_waitingId(messageId))) return;
+const _applyStyle = (el, extra) => Object.assign(el.style, _BASE_STYLE, extra);
+
+const _waitingId = (id) => `ai-waiting-${id}`;
+const _bannerId  = (id) => `ai-notify-${id}`;
+
+const _removeBanner = (id) => document.getElementById(id)?.remove();
+
+// ── Waiting indicator ────────────────────────────────────────────────────────
+
+const _showWaitingBanner = (messageId) => {
+    _removeBanner(_waitingId(messageId));
 
     const el = document.createElement('div');
     el.id = _waitingId(messageId);
-    el.className = 'ai-reply-notify ai-notify-visible';
-    el.style.cssText = 'cursor:default; background:#808080;';
-    el.innerHTML = `
-        <span>GoldieRill is thinking<span class="ai-waiting-dots"></span></span>
-    `;
+    _applyStyle(el, {
+        background:   '#808080',
+        borderColor:  '#DFDFDF #606060 #606060 #DFDFDF',
+        cursor:       'default',
+    });
+
+    // Animated dots via JS so there's no CSS dependency
+    let dots = 0;
+    const span = document.createElement('span');
+    span.textContent = 'GoldieRill is thinking.';
+    el.appendChild(span);
+    const timer = setInterval(() => {
+        dots = (dots + 1) % 4;
+        span.textContent = 'GoldieRill is thinking' + '.'.repeat(dots || 1);
+    }, 400);
+    el._dotTimer = timer;
+
     document.body.appendChild(el);
 };
 
-const _removeWaitingIndicator = (messageId) => {
-    const el = document.getElementById(_waitingId(messageId));
-    if (!el) return;
-    el.classList.remove('ai-notify-visible');
-    setTimeout(() => el.remove(), 300);
-};
+// ── Reply notification banner ────────────────────────────────────────────────
 
-// ── Notification banner (Twitter/X style) ───────────────────────────────────
-
-const _bannerId = (messageId) => `ai-notify-${messageId}`;
-
-const _showBanner = (messageId, aiComment) => {
-    document.getElementById(_bannerId(messageId))?.remove();
+const _showReplyBanner = (messageId, aiComment) => {
+    _removeBanner(_bannerId(messageId));
 
     const banner = document.createElement('div');
     banner.id = _bannerId(messageId);
-    banner.className = 'ai-reply-notify';
-    banner.innerHTML = `
-        <span>GoldieRill replied &mdash; click to jump there &darr;</span>
-        <button class="ai-notify-close" title="Dismiss">&#x2715;</button>
-    `;
+    _applyStyle(banner, {
+        background:  '#000080',
+        borderColor: '#4444CC #000033 #000033 #4444CC',
+        cursor:      'pointer',
+    });
+
+    const text = document.createElement('span');
+    text.textContent = 'GoldieRill replied — click to jump there ↓';
+    banner.appendChild(text);
+
+    const closeBtn = document.createElement('button');
+    Object.assign(closeBtn.style, {
+        background:  'none',
+        border:      '1px solid rgba(255,255,255,0.4)',
+        color:       '#fff',
+        fontSize:    '9px',
+        cursor:      'pointer',
+        padding:     '1px 4px',
+        fontFamily:  'inherit',
+    });
+    closeBtn.textContent = '✕';
+    banner.appendChild(closeBtn);
 
     document.body.appendChild(banner);
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => banner.classList.add('ai-notify-visible'));
-    });
 
-    const dismiss = () => {
-        banner.classList.remove('ai-notify-visible');
-        setTimeout(() => banner.remove(), 300);
-    };
+    const dismiss = () => banner.remove();
 
-    banner.querySelector('.ai-notify-close').addEventListener('click', (e) => {
-        e.stopPropagation();
-        dismiss();
-    });
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); });
 
     banner.addEventListener('click', async () => {
         dismiss();
-        await loadCommentsForMessage(messageId, 1, true);
+        const loadComments = await _getLoader();
+        await loadComments(messageId, 1, true);
         setTimeout(() => {
             const target = document.querySelector(`[data-comment-id="${aiComment.id}"]`);
             if (target) {
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                target.classList.add('ai-comment-highlight');
-                setTimeout(() => target.classList.remove('ai-comment-highlight'), 2200);
+                target.style.transition = 'background-color 0.3s ease';
+                target.style.backgroundColor = '#FFFF80';
+                setTimeout(() => { target.style.backgroundColor = ''; }, 2000);
             } else {
                 document.querySelector(`[data-message-id="${messageId}"]`)
                     ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -140,6 +179,5 @@ const _showBanner = (messageId, aiComment) => {
         }, 350);
     });
 
-    // Auto-dismiss after 30s
     setTimeout(dismiss, 30000);
 };

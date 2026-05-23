@@ -19,6 +19,9 @@ import {
 import {
     createStackEditButton
 } from './utils.js';
+import {
+    startAIReplyPoll
+} from './ai-notify.js';
 
 /**
  * Flattens the nested comment structure into a sorted, flat list for rendering.
@@ -194,12 +197,13 @@ export const renderCommentSection = (container, messageId, comments, pagination)
 
     // 4. Form submit handler
     if (commentForm) {
-        commentForm.addEventListener('submit', (e) => {
+        commentForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const input = commentForm.querySelector('textarea');
             const errorDiv = commentForm.querySelector('.comment-error-message');
 
-            handlePostComment(messageId, null, input, errorDiv);
+            const hadAIMention = await handlePostComment(messageId, null, input, errorDiv);
+            if (hadAIMention) startAIReplyPoll(messageId);
         });
     }
 
