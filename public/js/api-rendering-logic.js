@@ -31,6 +31,9 @@ import {
     renderPagination,
     updateURL
 } from './pagination.js';
+import {
+    completeProgressBar
+} from './skeleton-loader.js';
 
 
 // Main function to fetch and render messages from the API
@@ -73,6 +76,8 @@ export const fetchAndRenderMessages = async (page = 1) => {
             // 如果API返回了userId但前端不知道，重新检查认证状态
             await checkAuthStatus();
         }
+
+        completeProgressBar();
 
         // 渲染消息
         messageList.innerHTML = '';
@@ -119,6 +124,7 @@ export const fetchAndRenderMessages = async (page = 1) => {
         // 更新URL状态
         updateURL();
     } catch (error) {
+        completeProgressBar();
         console.error('Error:', error);
         messageList.innerHTML = '<p class="text-red-500 text-center">Could not load messages.</p>';
         errorMessage.classList.add('hidden');

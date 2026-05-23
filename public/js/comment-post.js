@@ -1,6 +1,12 @@
 import {
     loadCommentsForMessage
 } from './comment-loader.js';
+import {
+    startAIReplyPoll
+} from './ai-notify.js';
+
+const _mentionsAI = (text) =>
+    /@goldierill/i.test(text) || /@rag\b/i.test(text);
 
 // Handle posting a new comment (top-level or reply)
 export const handlePostComment = async (messageId, parentId, inputElement, errorElement) => {
@@ -10,6 +16,8 @@ export const handlePostComment = async (messageId, parentId, inputElement, error
         errorElement.classList.remove('hidden');
         return;
     }
+
+    const hasAIMention = _mentionsAI(content);
 
     try {
         const response = await fetch('/api/comments', {
@@ -34,6 +42,11 @@ export const handlePostComment = async (messageId, parentId, inputElement, error
 
         // 不再刷新页面，直接重新加载该消息的评论
         await loadCommentsForMessage(messageId, 1, true); // Force refresh
+
+        // Start polling for AI reply if the comment mentioned @goldierill or @rag
+        if (hasAIMention) {
+            startAIReplyPoll(messageId);
+        }
 
     } catch (error) {
         console.error('Error posting comment:', error);
