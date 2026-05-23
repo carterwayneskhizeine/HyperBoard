@@ -20,7 +20,7 @@ import {
     createStackEditButton
 } from './utils.js';
 import {
-    startAIReplyPoll
+    showAIRefreshButton
 } from './ai-notify.js';
 
 /**
@@ -203,7 +203,7 @@ export const renderCommentSection = (container, messageId, comments, pagination)
             const errorDiv = commentForm.querySelector('.comment-error-message');
 
             const hadAIMention = await handlePostComment(messageId, null, input, errorDiv);
-            if (hadAIMention) startAIReplyPoll(messageId);
+            if (hadAIMention) showAIRefreshButton(messageId);
         });
     }
 
