@@ -153,4 +153,113 @@ ${commentSection}Your response:`;
   }
 }
 
-module.exports = { getAIResponse };
+// ---------------------------------------------------------------------------
+// Portfolio chat: a clean request→response endpoint for the CV site (cv.goldierill.com).
+// Reuses RAG retrieval + LLM, but grounds answers on 陈秋锦's resume (always injected)
+// plus any knowledge-base posts found via RAG. Does NOT touch the message-board @rag flow.
+// ---------------------------------------------------------------------------
+async function getChatResponse({ question, history = [], resumeText = '', ragService, db }) {
+  const { AI_CHAT_API_URL, AI_CHAT_API_KEY, AI_CHAT_MODEL } = process.env;
+
+  if (!AI_CHAT_API_URL || !AI_CHAT_API_KEY || !AI_CHAT_MODEL) {
+    console.error('[Chat] AI_CHAT env vars not configured.');
+    return null;
+  }
+
+  if (activeAICalls >= MAX_CONCURRENT_AI_CALLS) {
+    console.log(`[Chat] Skipping — ${activeAICalls} calls already in progress`);
+    return { error: 'busy' };
+  }
+
+  activeAICalls++;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 55000);
+
+  try {
+    const q = cleanQuery(question).substring(0, 2000);
+    if (!q) return null;
+
+    // RAG: pull supplementary knowledge-base content (best-effort, never fatal)
+    let ragContext = '';
+    if (ragService && db) {
+      try {
+        const sources = await ragService.findRelevantSourceIds(q);
+        if (sources.length > 0) {
+          console.log(`[Chat] RAG found ${sources.length} sources: ${sources.map(s => `${s.type}#${s.id}`).join(', ')}`);
+          ragContext = await fetchFullContent(db, sources);
+        }
+        if (!ragContext) {
+          ragContext = await ragService.buildContext(q);
+        }
+      } catch (err) {
+        console.error('[Chat] RAG context failed:', err.message);
+      }
+    }
+
+    let systemPrompt = `你是「陈秋锦（Goldie Rill）」个人作品集网站上的 AI 助手，访客通过你了解陈秋锦其人。
+
+规则：
+- 用与用户提问相同的语言回答（默认简体中文）。
+- 依据下方「简历」与「知识库」回答关于陈秋锦的技能、项目、经历、求职意向等问题。
+- 用第三人称称呼他（「他 / 陈秋锦」），语气专业、友好、简洁、自信。
+- 只依据简历和知识库作答，不要编造未提及的事实。被问到资料中没有的信息时，诚实说明，并建议通过邮箱 got.money@qq.com 联系他。
+- 回答可适当精炼，避免大段照搬简历原文。
+
+=== 简历（主要事实来源）===
+${resumeText}`;
+
+    if (ragContext) {
+      systemPrompt += `
+
+=== 知识库（来自他的留言板，作为补充资料）===
+${ragContext}`;
+    }
+
+    const messages = [{ role: 'system', content: systemPrompt }];
+
+    // include a short rolling window of prior turns
+    if (Array.isArray(history)) {
+      for (const m of history.slice(-8)) {
+        if (m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim()) {
+          messages.push({ role: m.role, content: m.content.substring(0, 2000) });
+        }
+      }
+    }
+    messages.push({ role: 'user', content: q });
+
+    const response = await axios.post(
+      AI_CHAT_API_URL,
+      { model: AI_CHAT_MODEL, messages },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${AI_CHAT_API_KEY}`,
+        },
+        timeout: 60000,
+        signal: controller.signal,
+        maxContentLength: 4 * 1024 * 1024,
+        maxBodyLength: 4 * 1024 * 1024,
+      }
+    );
+
+    if (response.data && response.data.choices && response.data.choices.length > 0) {
+      const content = response.data.choices[0].message.content;
+      console.log(`[Chat] Response size: ${content.length} chars`);
+      return content.trim().substring(0, 4000);
+    }
+    console.error('[Chat] Unexpected LLM response structure:', response.data);
+    return null;
+  } catch (error) {
+    if (axios.isCancel(error) || error.name === 'CanceledError' || error.name === 'AbortError') {
+      console.error('[Chat] Request aborted due to timeout');
+    } else {
+      console.error('[Chat] Error calling LLM API:', error.response ? error.response.data : error.message);
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
+    activeAICalls--;
+  }
+}
+
+module.exports = { getAIResponse, getChatResponse };

@@ -17,6 +17,7 @@ const createCommentRoutes = require('./routes/comments');
 const createUploadRoutes = require('./routes/upload');
 const createSearchRoutes = require('./routes/search');
 const createInviteRoutes = require('./routes/invite');
+const createChatRoutes = require('./routes/chat');
 
 const createRAGService = require('./utils/rag-service');
 
@@ -62,6 +63,30 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api', uploadRoutes);
+
+// --- Portfolio chat endpoint (cross-origin, called directly by the CV site) ---
+// CORS scoped to /api/chat only; whitelist overridable via CHAT_ALLOWED_ORIGINS.
+const chatAllowedOrigins = (process.env.CHAT_ALLOWED_ORIGINS ||
+  'https://cv.goldierill.com,http://localhost:5173,http://localhost:4173')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+
+// Allow any localhost / 127.0.0.1 port during development (vite may shift ports).
+const isLocalhostOrigin = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
+
+const chatCors = (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (chatAllowedOrigins.includes(origin) || isLocalhostOrigin(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+};
+
+app.use('/api/chat', chatCors, createChatRoutes(db, ragService));
 
 const server = app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);
