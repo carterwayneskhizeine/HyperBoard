@@ -18,6 +18,7 @@ const createUploadRoutes = require('./routes/upload');
 const createSearchRoutes = require('./routes/search');
 const createInviteRoutes = require('./routes/invite');
 const createChatRoutes = require('./routes/chat');
+const createLeadRoutes = require('./routes/lead');
 
 const createRAGService = require('./utils/rag-service');
 
@@ -87,6 +88,7 @@ const chatCors = (req, res, next) => {
 };
 
 app.use('/api/chat', chatCors, createChatRoutes(db, ragService));
+app.use('/api/lead', chatCors, createLeadRoutes(db));
 
 const server = app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);

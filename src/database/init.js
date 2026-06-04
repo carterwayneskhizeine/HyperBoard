@@ -6,6 +6,38 @@ const { calculateHotScore } = require('../utils/hot-score');
  * @param {() => void} cleanupOrphanedImages - 清理孤儿文件的函数
  */
 function initializeDatabase(db, cleanupOrphanedImages) {
+  // 作品集站(cv-web)相关：获客线索 + AI 助手问答记录。
+  // 与下方主流程链式建表互不依赖，独立创建即可。
+  db.run(`CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT DEFAULT NULL,
+    contact TEXT NOT NULL,
+    message TEXT DEFAULT NULL,
+    session_id TEXT DEFAULT NULL,
+    ip TEXT DEFAULT NULL,
+    user_agent TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`, (err) => {
+    if (err) console.error('Error creating leads table:', err.message);
+    else console.log('Leads table created or already exists.');
+  });
+
+  db.run(`CREATE TABLE IF NOT EXISTS chat_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT DEFAULT NULL,
+    question TEXT NOT NULL,
+    answer TEXT DEFAULT NULL,
+    sources TEXT DEFAULT NULL,
+    ip TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`, (err) => {
+    if (err) console.error('Error creating chat_logs table:', err.message);
+    else console.log('Chat_logs table created or already exists.');
+  });
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at DESC)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_chat_logs_session ON chat_logs(session_id)`);
+
   // 创建 messages 表
   db.run(`CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

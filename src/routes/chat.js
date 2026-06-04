@@ -65,7 +65,7 @@ module.exports = function (db, ragService) {
       return res.status(429).json({ error: '请求过于频繁，请稍后再试。' });
     }
 
-    const { question, history } = req.body || {};
+    const { question, history, sessionId } = req.body || {};
     if (!question || typeof question !== 'string' || !question.trim()) {
       return res.status(400).json({ error: 'question 不能为空' });
     }
@@ -89,6 +89,18 @@ module.exports = function (db, ragService) {
       if (!result) {
         return res.status(502).json({ error: 'AI 暂时无法回答，请稍后重试。' });
       }
+
+      // Log the Q&A for review (best-effort; never let logging break the reply).
+      try {
+        db.run(
+          'INSERT INTO chat_logs (session_id, question, answer, ip) VALUES (?, ?, ?, ?)',
+          [typeof sessionId === 'string' ? sessionId.substring(0, 64) : null, question.substring(0, 2000), String(result).substring(0, 4000), String(ip).substring(0, 64)],
+          (e) => { if (e) console.error('[Chat] Failed to log Q&A:', e.message); }
+        );
+      } catch (e) {
+        console.error('[Chat] Failed to log Q&A:', e.message);
+      }
+
       return res.json({ reply: result });
     } catch (err) {
       console.error('[Chat] Handler error:', err.message);
